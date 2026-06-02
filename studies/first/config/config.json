@@ -7,7 +7,7 @@
     "run_dir": "$path_expand:../data/PROCESS/run_dir",
     "plot": false
   },
-  "reference_fbe": {
+  "free_boundary_equilibrium": {
     "plot_setup": false,
     "plot": true,
     "coilset": {

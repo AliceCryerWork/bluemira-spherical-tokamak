@@ -1,4 +1,5 @@
 from bluemira.base.parameter_frame import ParameterFrame
+from bluemira.base.reactor import Reactor
 from bluemira.builders.plasma import Plasma, PlasmaBuilder
 from bluemira.equilibria.coils._grouping import CoilSet
 from bluemira.equilibria.equilibrium import Equilibrium
@@ -17,6 +18,20 @@ from bluemira_st.pf_coil.manager import PFCoil
 from bluemira_st.tf_coil.builder import TFCoilBuilder
 from bluemira_st.tf_coil.designer import TFCoilDesigner
 from bluemira_st.tf_coil.manager import TFCoil
+
+
+class SphericalReactor(Reactor):
+    """A simple reactor with two components."""
+
+    # Components
+    plasma: Plasma
+    blanket: BB
+    tf_coil: TFCoil
+    pf_coil: PFCoil
+    inboard_shield: IS
+
+    # Models
+    # equilibria: EquilibriumManager
 
 
 def build_reference_equilibrium(

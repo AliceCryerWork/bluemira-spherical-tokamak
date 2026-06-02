@@ -1,13 +1,13 @@
 {
   "x1": {
-    "value": 0.872862868116548,
+    "value": 0.8728628681165481,
     "lower_bound": 0.3,
     "upper_bound": 0.5,
     "fixed": true,
     "description": "Inner limb radius"
   },
   "x2": {
-    "value": 10.690185755255492,
+    "value": 10.690185755210413,
     "lower_bound": 9.738241394940257,
     "upper_bound": 14.607362092410385,
     "fixed": false,
