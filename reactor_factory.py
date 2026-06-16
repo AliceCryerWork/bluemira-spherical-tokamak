@@ -32,21 +32,7 @@ from eudemo.params import EUDEMOReactorParams
 from eudemo.power_cycle import SteadyStatePowerCycleSolver
 from eudemo.radial_build import radial_build as eudemo_radial_build
 from eudemo.reactor import (
-    EUDEMO,
-    assemble_thermal_shield,
-    build_blanket,
-    build_coil_structures,
-    build_cryostat,
-    build_cryostat_plugs,
-    build_cryots,
-    build_divertor,
-    build_equatorial_port,
-    build_lower_port,
-    build_radiation_plugs,
-    build_radiation_shield,
-    build_upper_port,
-    build_vacuum_vessel,
-    build_vacuum_vessel_thermal_shield,
+    EUDEMO
 )
 from matproplib.conditions import OperationalConditions
 
@@ -152,7 +138,7 @@ class ReactorFactory:
         config = self.reactor_config.config_for("blanket")
 
         if ivc_shapes is not None and r_inner_cut is not None and cut_angle is not None:
-            reactor.blanket = build_blanket(
+            reactor.blanket = reactor.build_blanket(
                 params,
                 config,
                 ivc_shapes.inner_boundary,
@@ -239,7 +225,8 @@ class ReactorFactory:
             self.reactor_config.config_for("dummy_fixed_boundary_equilibrium"),
         )
 
-        self.reference_eq = self.build_reference_equilibrium(
+        self.reference_eq = self._build_reference_equilibrium(
+            reactor,
             lcfs_coords,
             profiles,
         )
@@ -252,13 +239,13 @@ class ReactorFactory:
             equilibrium=self.reference_eq,
         )
 
-        reactor.vacuum_vessel = build_vacuum_vessel(
+        reactor.vacuum_vessel = reactor.build_vacuum_vessel(
             self.reactor_config.params_for("vacuum_vessel"),
             self.reactor_config.config_for("vacuum_vessel"),
             ivc_shapes.outer_boundary,
         )
 
-        reactor.divertor = build_divertor(
+        reactor.divertor = reactor.build_divertor(
             self.reactor_config.params_for("divertor"),
             self.reactor_config.config_for("divertor"),
             ivc_shapes.divertor_face,
@@ -298,7 +285,7 @@ class ReactorFactory:
 
         reactor.neutronics = NeutronicsManager(zero_d_params, neutronics_csg)
 
-        vv_thermal_shield = build_vacuum_vessel_thermal_shield(
+        vv_thermal_shield = reactor.build_vacuum_vessel_thermal_shield(
             self.reactor_config.params_for("thermal_shield"),
             self.reactor_config.config_for("thermal_shield", "VVTS"),
             reactor.vacuum_vessel.xz_boundary,
@@ -340,18 +327,18 @@ class ReactorFactory:
         # include coil XS.
         # show_cad(debug)
 
-        cryostat_thermal_shield = build_cryots(
+        cryostat_thermal_shield = reactor.build_cryots(
             self.reactor_config.params_for("thermal_shield"),
             self.reactor_config.config_for("thermal_shield", "cryostat"),
             reactor.pf_coils.xz_boundary,
             reactor.tf_coils.xz_outer_boundary,
         )
 
-        reactor.thermal_shield = assemble_thermal_shield(
+        reactor.thermal_shield = reactor.assemble_thermal_shield(
             vv_thermal_shield, cryostat_thermal_shield
         )
 
-        reactor.coil_structures = build_coil_structures(
+        reactor.coil_structures = reactor.build_coil_structures(
             self.reactor_config.params_for("coil_structures"),
             self.reactor_config.config_for("coil_structures"),
             tf_coil_xz_face=reactor.tf_coils.xz_face,
@@ -363,13 +350,13 @@ class ReactorFactory:
             ],
         )
 
-        reactor.cryostat = build_cryostat(
+        reactor.cryostat = reactor.build_cryostat(
             self.reactor_config.params_for("cryostat"),
             self.reactor_config.config_for("cryostat"),
             cryostat_thermal_shield.xz_boundary,
         )
 
-        reactor.radiation_shield = build_radiation_shield(
+        reactor.radiation_shield = reactor.build_radiation_shield(
             self.reactor_config.params_for("radiation_shield"),
             self.reactor_config.config_for("radiation_shield"),
             reactor.cryostat.xz_boundary,
@@ -379,20 +366,20 @@ class ReactorFactory:
         # TODO: Make potentially larger depending on where the PF
         # coils ended up. Warn if this isn't the case.
 
-        ts_upper_port, vv_upper_port = build_upper_port(
+        ts_upper_port, vv_upper_port = reactor.build_upper_port(
             self.reactor_config.params_for("upper_port"),
             self.reactor_config.config_for("upper_port"),
             upper_port_koz_xz,
             reactor.pf_coils,
             cryostat_thermal_shield.xz_boundary,
         )
-        ts_eq_port, vv_eq_port = build_equatorial_port(
+        ts_eq_port, vv_eq_port = reactor.build_equatorial_port(
             self.reactor_config.params_for("equatorial_port"),
             self.reactor_config.config_for("equatorial_port"),
             cryostat_thermal_shield.xz_boundary,
         )
 
-        ts_lower_port, vv_lower_port = build_lower_port(
+        ts_lower_port, vv_lower_port = reactor.build_lower_port(
             self.reactor_config.params_for("lower_port"),
             self.reactor_config.config_for("lower_port"),
             lp_duct_angled_nowall_extrude_boundary,
@@ -410,14 +397,14 @@ class ReactorFactory:
             n_TF=self.reactor_config.global_params.n_TF.value,
         )
 
-        cr_plugs = build_cryostat_plugs(
+        cr_plugs = reactor.build_cryostat_plugs(
             self.reactor_config.params_for("cryostat"),
             self.reactor_config.config_for("cryostat"),
             [ts_upper_port, ts_eq_port, ts_lower_port],
             reactor.cryostat.xz_boundary,
         )
 
-        rs_plugs = build_radiation_plugs(
+        rs_plugs = reactor.build_radiation_plugs(
             self.reactor_config.params_for("radiation_shield"),
             self.reactor_config.config_for("radiation_shield"),
             cr_plugs,
