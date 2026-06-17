@@ -33,8 +33,8 @@ class SphericalReactor(Reactor):
     # Models
     # equilibria: EquilibriumManager
 
-
-    def build_reference_equilibrium(self,
+    @staticmethod
+    def build_reference_equilibrium(
         params: dict | ParameterFrame,
         build_config: dict,
     ) -> Equilibrium:
@@ -53,8 +53,8 @@ class SphericalReactor(Reactor):
         )
         return designer.execute()
 
-
-    def build_plasma(self,
+    @staticmethod
+    def build_plasma(
         params: dict | ParameterFrame, build_config: dict, eq: Equilibrium
     ) -> Plasma:
         """Build EUDEMO plasma from an equilibrium.
@@ -65,12 +65,14 @@ class SphericalReactor(Reactor):
             Plasma component manager
         """
         lcfs_loop = eq.get_LCFS()
-        lcfs_wire = interpolate_bspline({"x": lcfs_loop.x, "z": lcfs_loop.z}, closed=True)
+        lcfs_wire = interpolate_bspline(
+            {"x": lcfs_loop.x, "z": lcfs_loop.z}, closed=True
+        )
         builder = PlasmaBuilder(params, build_config, lcfs_wire)
         return Plasma(builder.build())
 
-
-    def build_tf_coils(self,
+    @staticmethod
+    def build_tf_coils(
         params: dict | ParameterFrame,
         build_config: dict,
         coilset: CoilSet,
@@ -89,8 +91,8 @@ class SphericalReactor(Reactor):
         builder = TFCoilBuilder(params, build_config, tf_cl.create_shape(), tf_wp_xs)
         return TFCoil(builder.build())
 
-
-    def build_bb(self,
+    @staticmethod
+    def build_bb(
         params: dict | ParameterFrame,
         build_config: dict,
         mat_name: str,
@@ -99,8 +101,8 @@ class SphericalReactor(Reactor):
         """Build the breeder blanket component."""
         return BB(BBBuilder(params, build_config, mat_name, ref_fbe).build())
 
-
-    def build_pf_coils(self,
+    @staticmethod
+    def build_pf_coils(
         params: dict | ParameterFrame,
         build_config: dict,
         coilset: CoilSet,
@@ -117,8 +119,8 @@ class SphericalReactor(Reactor):
         component = build_pf_coils_component(params, build_config, coilset)
         return PFCoil(component, coilset)
 
-
-    def build_is(self,
+    @staticmethod
+    def build_is(
         params: dict | ParameterFrame,
         build_config: dict,
         mat_name: str,
