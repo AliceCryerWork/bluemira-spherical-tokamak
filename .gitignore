@@ -12,6 +12,7 @@
 .idea/**/dictionaries
 .idea/**/shelf
 **/run_dir/**.dat
+results_v05/**
 
 # AWS User-specific
 .idea/**/aws.xml
