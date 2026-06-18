@@ -2,9 +2,12 @@
 #
 # SPDX-License-Identifier: MIT
 # %%
+import json
+import time
 from pathlib import Path
 from typing import Self
 
+from bluemira.base.components import Component
 from bluemira.base.designer import run_designer
 from bluemira.base.file import get_bluemira_root
 from bluemira.base.look_and_feel import bluemira_print
@@ -20,7 +23,14 @@ from bluemira.radiation_transport.neutronics.zero_d_neutronics import (
     ZeroDNeutronicsModel,
 )
 from eudemo.blanket import Blanket
-from eudemo.comp_managers import VacuumVesselThermalShield
+from eudemo.comp_managers import (
+    CoilStructures,
+    Cryostat,
+    CryostatThermalShield,
+    RadiationShield,
+    ThermalShield,
+    VacuumVesselThermalShield,
+)
 from eudemo.equilibria import (
     DummyFixedEquilibriumDesigner,
     FixedEquilibriumDesigner,
@@ -52,12 +62,17 @@ class FactoryConfig:
     """Class to load ReactorFactory config file."""
 
     @staticmethod
-    def load_config(reactor_type: str, build_config: str | Path | dict) -> ReactorConfig:
+    def load_config(build_config: str | Path | dict) -> ReactorConfig:
+
+        with Path(build_config).open("r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        reactor_type: str = data["machine_type"]
         match reactor_type:
             case "eudemo":
-                return ReactorConfig(build_config, EUDEMOReactorParams)
+                return reactor_type, ReactorConfig(build_config, EUDEMOReactorParams)
             case "spherical_reactor":
-                return ReactorConfig(build_config, BluemiraSTParams)
+                return reactor_type, ReactorConfig(build_config, BluemiraSTParams)
 
 
 class ReactorFactory:
@@ -71,10 +86,8 @@ class ReactorFactory:
         self.reactor_config = reactor_config
 
     @classmethod
-    def from_config_file(
-        cls, reactor_type: str, build_config: str | Path | dict
-    ) -> Self:
-        reactor_config = FactoryConfig.load_config(reactor_type, build_config)
+    def from_config_file(cls, build_config: str | Path | dict) -> Self:
+        reactor_type, reactor_config = FactoryConfig.load_config(build_config)
         return cls(reactor_type, reactor_config)
 
     def create_reactor(self) -> SphericalReactor | EUDEMO:
@@ -197,6 +210,198 @@ class ReactorFactory:
         )
 
     @staticmethod
+    def _build_vacuum_vessel_thermal_shield(
+        reactor_config: ReactorConfig, vacuum_vessel
+    ) -> VacuumVesselThermalShield:
+        return EUDEMO.build_vacuum_vessel_thermal_shield(
+            reactor_config.params_for("thermal_shield"),
+            reactor_config.config_for("thermal_shield", "VVTS"),
+            vacuum_vessel.xz_boundary,
+        )
+
+    @staticmethod
+    def _design_ivc(
+        reactor_config: ReactorConfig, reference_eq: Equilibrium
+    ) -> IVCShapes:
+        return design_ivc(
+            reactor_config.params_for("IVC").global_params,
+            reactor_config.config_for("IVC"),
+            equilibrium=reference_eq,
+        )
+
+    @staticmethod
+    def _build_vacuum_vessel(reactor_config: ReactorConfig, ivc_shapes: IVCShapes):
+        return EUDEMO.build_vacuum_vessel(
+            reactor_config.params_for("vacuum_vessel"),
+            reactor_config.config_for("vacuum_vessel"),
+            ivc_shapes.outer_boundary,
+        )
+
+    @staticmethod
+    def _build_divertor(reactor_config: ReactorConfig, ivc_shapes: IVCShapes):
+        return EUDEMO.build_divertor(
+            reactor_config.params_for("divertor"),
+            reactor_config.config_for("divertor"),
+            ivc_shapes.divertor_face,
+        )
+
+    @staticmethod
+    def _upper_port_designer(reactor_config: ReactorConfig, ivc_shapes: IVCShapes):
+        designer = UpperPortKOZDesigner(
+            reactor_config.params_for("upper_port"),
+            reactor_config.config_for("upper_port"),
+            ivc_shapes.blanket_face,
+        )
+        return designer.execute()
+
+    @staticmethod
+    def _build_cryots(
+        reactor_config: ReactorConfig, pf_coils: EU_PFCoil, tf_coils: EU_TFCoil
+    ) -> CryostatThermalShield:
+        return EUDEMO.build_cryots(
+            reactor_config.params_for("thermal_shield"),
+            reactor_config.config_for("thermal_shield", "cryostat"),
+            pf_coils.xz_boundary,
+            tf_coils.xz_outer_boundary,
+        )
+
+    @staticmethod
+    def _assemble_thermal_shield(
+        vv_thermal_shield: VacuumVesselThermalShield,
+        cryostat_thermal_shield: CryostatThermalShield,
+    ) -> ThermalShield:
+        return EUDEMO.assemble_thermal_shield(vv_thermal_shield, cryostat_thermal_shield)
+
+    @staticmethod
+    def _build_coil_structures(
+        reactor_config: ReactorConfig,
+        pf_coils: EU_PFCoil,
+        tf_coils: EU_TFCoil,
+        keep_out_zones: list,
+    ) -> CoilStructures:
+        return EUDEMO.build_coil_structures(
+            reactor_config.params_for("coil_structures"),
+            reactor_config.config_for("coil_structures"),
+            tf_coil_xz_face=tf_coils.xz_face,
+            pf_coil_xz_wires=pf_coils.PF_xz_boundary,
+            pf_coil_keep_out_zones=keep_out_zones,
+        )
+
+    @staticmethod
+    def _build_cryostat(
+        reactor_config: ReactorConfig, cryostat_thermal_shield: CryostatThermalShield
+    ) -> Cryostat:
+        return EUDEMO.build_cryostat(
+            reactor_config.params_for("cryostat"),
+            reactor_config.config_for("cryostat"),
+            cryostat_thermal_shield.xz_boundary,
+        )
+
+    @staticmethod
+    def _build_radiation_shield(reactor_config: ReactorConfig, cryostat):
+        return EUDEMO.build_radiation_shield(
+            reactor_config.params_for("radiation_shield"),
+            reactor_config.config_for("radiation_shield"),
+            cryostat.xz_boundary,
+        )
+
+    @staticmethod
+    def _build_upper_port(
+        reactor_config: ReactorConfig,
+        upper_port_koz_xz,
+        pf_coils: EU_PFCoil,
+        cryostat_thermal_shield: CryostatThermalShield,
+    ):
+        return EUDEMO.build_upper_port(
+            reactor_config.params_for("upper_port"),
+            reactor_config.config_for("upper_port"),
+            upper_port_koz_xz,
+            pf_coils,
+            cryostat_thermal_shield.xz_boundary,
+        )
+
+    @staticmethod
+    def _build_equatorial_port(
+        reactor_config: ReactorConfig, cryostat_thermal_shield: CryostatThermalShield
+    ):
+        return EUDEMO.build_equatorial_port(
+            reactor_config.params_for("equatorial_port"),
+            reactor_config.config_for("equatorial_port"),
+            cryostat_thermal_shield.xz_boundary,
+        )
+
+    @staticmethod
+    def _build_lower_port(
+        reactor_config: ReactorConfig,
+        lp_duct_angled_nowall_extrude_boundary,
+        lp_duct_straight_nowall_extrude_boundary,
+        cryostat,
+    ):
+        return EUDEMO.build_lower_port(
+            reactor_config.params_for("lower_port"),
+            reactor_config.config_for("lower_port"),
+            lp_duct_angled_nowall_extrude_boundary,
+            lp_duct_straight_nowall_extrude_boundary,
+            cryostat.xz_boundary,
+        )
+
+    @staticmethod
+    def _build_cryostat_plugs(
+        reactor_config: ReactorConfig, ports: list, cryostat: Cryostat
+    ) -> Component:
+        return EUDEMO.build_cryostat_plugs(
+            reactor_config.params_for("cryostat"),
+            reactor_config.config_for("cryostat"),
+            ports,
+            cryostat.xz_boundary,
+        )
+
+    @staticmethod
+    def _build_radiation_plugs(
+        reactor_config: ReactorConfig,
+        cr_plugs: Component,
+        radiation_shield: RadiationShield,
+    ) -> Component:
+        return EUDEMO.build_radiation_plugs(
+            reactor_config.params_for("radiation_shield"),
+            reactor_config.config_for("radiation_shield"),
+            cr_plugs,
+            radiation_shield.xz_boundary,
+        )
+
+    @staticmethod
+    def _run_dagmc_neutronics(
+        reactor: EUDEMO, reactor_config: ReactorConfig, reference_eq: Equilibrium
+    ):
+        return run_dagmc_neutronics(
+            reactor,
+            reactor_config.params_for("neutronics", "DAGMC").global_params,
+            reactor_config.config_for("neutronics", "DAGMC"),
+            reference_eq,
+        )
+
+    @staticmethod
+    def _eq_port_designer(reactor_config: ReactorConfig, x_ob: float) -> list:
+        eq_port_designer = EquatorialPortKOZDesigner(
+            reactor_config.params_for("equatorial_port"),
+            reactor_config.config_for("equatorial_port"),
+            x_ob,
+        )
+        return eq_port_designer.execute()
+
+    @staticmethod
+    def _lower_port_designer(
+        reactor_config: ReactorConfig, ivc_shapes, tf_coils
+    ) -> list:
+        return LowerPortKOZDesigner(
+            reactor_config.params_for("lower_port"),
+            reactor_config.config_for("lower_port"),
+            ivc_shapes.divertor_face,
+            ivc_shapes.div_wall_join_pt,
+            tf_coils.xz_outer_boundary,
+        ).execute()
+
+    @staticmethod
     def calculate_centre_of_mass() -> None:
         return
 
@@ -247,8 +452,15 @@ class ReactorFactory:
 
     @staticmethod
     def _create_eudemo(reactor_config: ReactorConfig) -> EUDEMO:
+        run_time_track = {
+            "Total": 0.0,
+            "PROCESS": 0.0,
+            "CSG neutronics": 0.0,
+            "CAD neutronics": 0.0,
+        }
         reactor = EUDEMO("EUDEMO", n_sectors=reactor_config.global_params.n_TF.value)
 
+        start = time.time()
         establish_material_cache([
             "eudemo.materials",
             "eurofusion_materials.library",
@@ -279,30 +491,17 @@ class ReactorFactory:
 
         reactor.plasma = ReactorFactory._build_plasma(reactor_config, reference_eq)
 
-        ivc_shapes = design_ivc(
-            reactor_config.params_for("IVC").global_params,
-            reactor_config.config_for("IVC"),
-            equilibrium=reference_eq,
+        ivc_shapes = ReactorFactory._design_ivc(reactor_config, reference_eq)
+
+        reactor.vacuum_vessel = ReactorFactory._build_vacuum_vessel(
+            reactor_config, ivc_shapes
         )
 
-        reactor.vacuum_vessel = EUDEMO.build_vacuum_vessel(
-            reactor_config.params_for("vacuum_vessel"),
-            reactor_config.config_for("vacuum_vessel"),
-            ivc_shapes.outer_boundary,
-        )
+        reactor.divertor = ReactorFactory._build_divertor(reactor_config, ivc_shapes)
 
-        reactor.divertor = EUDEMO.build_divertor(
-            reactor_config.params_for("divertor"),
-            reactor_config.config_for("divertor"),
-            ivc_shapes.divertor_face,
+        upper_port_koz_xz, r_inner_cut, cut_angle = ReactorFactory._upper_port_designer(
+            reactor_config, ivc_shapes
         )
-
-        upper_port_designer = UpperPortKOZDesigner(
-            reactor_config.params_for("upper_port"),
-            reactor_config.config_for("upper_port"),
-            ivc_shapes.blanket_face,
-        )
-        upper_port_koz_xz, r_inner_cut, cut_angle = upper_port_designer.execute()
 
         reactor.blanket = ReactorFactory._build_blankets(
             reactor_config,
@@ -315,6 +514,7 @@ class ReactorFactory:
         zero_d_params = ZeroDNeutronicsModel(reactor_config.global_params).run()
 
         reactor_config.global_params.update_from_frame(zero_d_params)
+
         if reactor_config.config_for("neutronics", "CSG").get("enabled", False):
             neutronics_csg = run_csg_neutronics(
                 reactor_config.params_for("neutronics", "CSG").global_params,
@@ -333,10 +533,9 @@ class ReactorFactory:
 
         reactor.neutronics = NeutronicsManager(zero_d_params, neutronics_csg)
 
-        vv_thermal_shield = EUDEMO.build_vacuum_vessel_thermal_shield(
-            reactor_config.params_for("thermal_shield"),
-            reactor_config.config_for("thermal_shield", "VVTS"),
-            reactor.vacuum_vessel.xz_boundary,
+        vv_thermal_shield = ReactorFactory._build_vacuum_vessel_thermal_shield(
+            reactor_config,
+            reactor.vacuum_vessel,
         )
 
         reactor.tf_coils, peak_opt_ripple = ReactorFactory._build_tf_coils(
@@ -349,26 +548,16 @@ class ReactorFactory:
             peak_opt_ripple, "BLUEMIRA"
         )
 
-        eq_port_designer = EquatorialPortKOZDesigner(
-            reactor_config.params_for("equatorial_port"),
-            reactor_config.config_for("equatorial_port"),
-            x_ob=20.0,
-        )
-
-        eq_port_koz_xz = eq_port_designer.execute()
+        eq_port_koz_xz = ReactorFactory._eq_port_designer(reactor_config, x_ob=20.0)
 
         (
             _lp_duct_xz_void_space,
             lower_port_koz_xz,
             lp_duct_angled_nowall_extrude_boundary,
             lp_duct_straight_nowall_extrude_boundary,
-        ) = LowerPortKOZDesigner(
-            reactor_config.params_for("lower_port"),
-            reactor_config.config_for("lower_port"),
-            ivc_shapes.divertor_face,
-            ivc_shapes.div_wall_join_pt,
-            reactor.tf_coils.xz_outer_boundary,
-        ).execute()
+        ) = ReactorFactory._lower_port_designer(
+            reactor_config, ivc_shapes, reactor.tf_coils
+        )
 
         reactor.pf_coils = ReactorFactory._build_pf_coils(
             reactor,
@@ -389,60 +578,53 @@ class ReactorFactory:
             [upper_port_koz_xz, eq_port_koz_xz, lower_port_koz_xz],
         )
 
-        cryostat_thermal_shield = EUDEMO.build_cryots(
-            reactor_config.params_for("thermal_shield"),
-            reactor_config.config_for("thermal_shield", "cryostat"),
-            reactor.pf_coils.xz_boundary,
-            reactor.tf_coils.xz_outer_boundary,
+        cryostat_thermal_shield = ReactorFactory._build_cryots(
+            reactor_config,
+            reactor.pf_coils,
+            reactor.tf_coils,
         )
 
-        reactor.thermal_shield = reactor.assemble_thermal_shield(
+        reactor.thermal_shield = ReactorFactory._assemble_thermal_shield(
             vv_thermal_shield, cryostat_thermal_shield
         )
 
-        reactor.coil_structures = EUDEMO.build_coil_structures(
-            reactor_config.params_for("coil_structures"),
-            reactor_config.config_for("coil_structures"),
-            tf_coil_xz_face=reactor.tf_coils.xz_face,
-            pf_coil_xz_wires=reactor.pf_coils.PF_xz_boundary,
-            pf_coil_keep_out_zones=[
+        reactor.coil_structures = ReactorFactory._build_coil_structures(
+            reactor_config,
+            tf_coils=reactor.tf_coils,
+            pf_coils=reactor.pf_coils,
+            keep_out_zones=[
                 upper_port_koz_xz,
                 eq_port_koz_xz,
                 lower_port_koz_xz,
             ],
         )
 
-        reactor.cryostat = EUDEMO.build_cryostat(
-            reactor_config.params_for("cryostat"),
-            reactor_config.config_for("cryostat"),
-            cryostat_thermal_shield.xz_boundary,
+        reactor.cryostat = ReactorFactory._build_cryostat(
+            reactor_config,
+            cryostat_thermal_shield,
         )
 
-        reactor.radiation_shield = EUDEMO.build_radiation_shield(
-            reactor_config.params_for("radiation_shield"),
-            reactor_config.config_for("radiation_shield"),
-            reactor.cryostat.xz_boundary,
+        reactor.radiation_shield = ReactorFactory._build_radiation_shield(
+            reactor_config,
+            reactor.cryostat,
         )
 
-        ts_upper_port, vv_upper_port = EUDEMO.build_upper_port(
-            reactor_config.params_for("upper_port"),
-            reactor_config.config_for("upper_port"),
+        ts_upper_port, vv_upper_port = ReactorFactory._build_upper_port(
+            reactor_config,
             upper_port_koz_xz,
             reactor.pf_coils,
-            cryostat_thermal_shield.xz_boundary,
+            cryostat_thermal_shield,
         )
-        ts_eq_port, vv_eq_port = EUDEMO.build_equatorial_port(
-            reactor_config.params_for("equatorial_port"),
-            reactor_config.config_for("equatorial_port"),
-            cryostat_thermal_shield.xz_boundary,
+        ts_eq_port, vv_eq_port = ReactorFactory._build_equatorial_port(
+            reactor_config,
+            cryostat_thermal_shield,
         )
 
-        ts_lower_port, vv_lower_port = EUDEMO.build_lower_port(
-            reactor_config.params_for("lower_port"),
-            reactor_config.config_for("lower_port"),
+        ts_lower_port, vv_lower_port = ReactorFactory._build_lower_port(
+            reactor_config,
             lp_duct_angled_nowall_extrude_boundary,
             lp_duct_straight_nowall_extrude_boundary,
-            reactor.cryostat.xz_boundary,
+            reactor.cryostat,
         )
 
         reactor.vacuum_vessel.add_ports(
@@ -455,18 +637,16 @@ class ReactorFactory:
             n_TF=reactor_config.global_params.n_TF.value,
         )
 
-        cr_plugs = EUDEMO.build_cryostat_plugs(
-            reactor_config.params_for("cryostat"),
-            reactor_config.config_for("cryostat"),
+        cr_plugs = ReactorFactory._build_cryostat_plugs(
+            reactor_config,
             [ts_upper_port, ts_eq_port, ts_lower_port],
-            reactor.cryostat.xz_boundary,
+            reactor.cryostat,
         )
 
-        rs_plugs = EUDEMO.build_radiation_plugs(
-            reactor_config.params_for("radiation_shield"),
-            reactor_config.config_for("radiation_shield"),
+        rs_plugs = ReactorFactory._build_radiation_plugs(
+            reactor_config,
             cr_plugs,
-            reactor.radiation_shield.xz_boundary,
+            reactor.radiation_shield,
         )
 
         reactor.cryostat.add_plugs(
@@ -477,10 +657,9 @@ class ReactorFactory:
             rs_plugs, n_TF=reactor_config.global_params.n_TF.value
         )
 
-        reactor.neutronics.dagmc = run_dagmc_neutronics(
+        reactor.neutronics.dagmc = ReactorFactory._run_dagmc_neutronics(
             reactor,
-            reactor_config.params_for("neutronics", "DAGMC").global_params,
-            reactor_config.config_for("neutronics", "DAGMC"),
+            reactor_config,
             reference_eq,
         )
 
@@ -494,14 +673,28 @@ class ReactorFactory:
 
         reactor_config.global_params.V_p.set_value(lcfs.volume, "BLUEMIRA")
 
+        end = time.time()
+        run_time_track["Total"] = end - start
+        n_config = reactor_config.config_for("neutronics")
+        particles = n_config.get("particles", n_config["DAGMC"]["particles"])
+        neutrons = f"{particles:.2g}".replace(".", "_").replace("+", "")
+        a_string = f"{reactor_config.global_params.A.value:.3f}".replace(".", "_")
+        folder_name = f"results_v05/A_{a_string}_neut_{neutrons}"
+        Path(folder_name).mkdir(exist_ok=True, parents=True)
+        filename = f"{folder_name}/run_time.json"
+        with Path(filename).open("w", encoding="utf-8") as f:
+            json.dump(run_time_track, f, indent=2)
+        reactor.save_reactor(reactor, reactor_config, folder_name=folder_name)
+
 
 if __name__ == "__main__":
-    BUILD_CONFIG_FILE_PATH = Path(
+    """ BUILD_CONFIG_FILE_PATH = Path(
         Path(__file__).parent, "studies/first/config/config.json"
     ).resolve()
-    # BUILD_CONFIG_FILE_PATH = Path(Path(__file__).parent,
-    # "bluemira/eudemo/config/build_config.json" ).resolve()
+    """
+    BUILD_CONFIG_FILE_PATH = Path(
+        Path(__file__).parent.parent, "bluemira/eudemo/config/build_config.json"
+    ).resolve()
+    rf = ReactorFactory.from_config_file(BUILD_CONFIG_FILE_PATH)
 
-    rf = ReactorFactory.from_config_file("spherical_reactor", BUILD_CONFIG_FILE_PATH)
-    # rf = ReactorFactory.from_config_file("eudemo", BUILD_CONFIG_FILE_PATH)
     reactor = rf.create_reactor()

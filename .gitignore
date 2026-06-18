@@ -11,7 +11,10 @@
 .idea/**/usage.statistics.xml
 .idea/**/dictionaries
 .idea/**/shelf
-**/run_dir/**.dat
+**/run_dir/OUT.DAT
+**/run_dir/IN.DAT
+**/run_dir/MFILE.DAT
+**/run_dir/SIG_TF.json
 results_v05/**
 
 # AWS User-specific
