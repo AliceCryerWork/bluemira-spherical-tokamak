@@ -1,5 +1,4 @@
 from bluemira.base.parameter_frame import ParameterFrame
-from bluemira.base.reactor import Reactor
 from bluemira.builders.plasma import Plasma, PlasmaBuilder
 from bluemira.equilibria.coils._grouping import CoilSet
 from bluemira.equilibria.equilibrium import Equilibrium
@@ -20,111 +19,95 @@ from bluemira_st.tf_coil.designer import TFCoilDesigner
 from bluemira_st.tf_coil.manager import TFCoil
 
 
-class SphericalReactor(Reactor):
-    """A simple reactor with two components."""
+def build_reference_equilibrium(
+    params: dict | ParameterFrame,
+    build_config: dict,
+) -> Equilibrium:
+    """
+    Build the reference equilibrium for the tokamak and store in
+    the equilibrium manager.
 
-    # Components
-    plasma: Plasma
-    blanket: BB
-    tf_coil: TFCoil
-    pf_coil: PFCoil
-    inboard_shield: IS
+    Returns
+    -------
+    :
+        The reference equilibrium
+    """
+    designer = ReferenceFreeBoundaryEquilibriumDesigner(
+        params,
+        build_config,
+    )
+    return designer.execute()
 
-    # Models
-    # equilibria: EquilibriumManager
 
-    @staticmethod
-    def build_reference_equilibrium(
-        params: dict | ParameterFrame,
-        build_config: dict,
-    ) -> Equilibrium:
-        """
-        Build the reference equilibrium for the tokamak and store in
-        the equilibrium manager.
+def build_plasma(
+    params: dict | ParameterFrame, build_config: dict, eq: Equilibrium
+) -> Plasma:
+    """Build EUDEMO plasma from an equilibrium.
 
-        Returns
-        -------
-        :
-            The reference equilibrium
-        """
-        designer = ReferenceFreeBoundaryEquilibriumDesigner(
-            params,
-            build_config,
-        )
-        return designer.execute()
+    Returns
+    -------
+    :
+        Plasma component manager
+    """
+    lcfs_loop = eq.get_LCFS()
+    lcfs_wire = interpolate_bspline({"x": lcfs_loop.x, "z": lcfs_loop.z}, closed=True)
+    builder = PlasmaBuilder(params, build_config, lcfs_wire)
+    return Plasma(builder.build())
 
-    @staticmethod
-    def build_plasma(
-        params: dict | ParameterFrame, build_config: dict, eq: Equilibrium
-    ) -> Plasma:
-        """Build EUDEMO plasma from an equilibrium.
 
-        Returns
-        -------
-        :
-            Plasma component manager
-        """
-        lcfs_loop = eq.get_LCFS()
-        lcfs_wire = interpolate_bspline(
-            {"x": lcfs_loop.x, "z": lcfs_loop.z}, closed=True
-        )
-        builder = PlasmaBuilder(params, build_config, lcfs_wire)
-        return Plasma(builder.build())
+def build_tf_coils(
+    params: dict | ParameterFrame,
+    build_config: dict,
+    coilset: CoilSet,
+    plasma_lcfs: BluemiraWire,
+) -> TFCoil:
+    """Build the TF coils from the initial TF coil shapes.
 
-    @staticmethod
-    def build_tf_coils(
-        params: dict | ParameterFrame,
-        build_config: dict,
-        coilset: CoilSet,
-        plasma_lcfs: BluemiraWire,
-    ) -> TFCoil:
-        """Build the TF coils from the initial TF coil shapes.
+    Returns
+    -------
+    :
+        The TF coil shapes
+    """
+    tf_cl, tf_wp_xs = TFCoilDesigner(
+        params, build_config, coilset, plasma_lcfs
+    ).execute()
+    builder = TFCoilBuilder(params, build_config, tf_cl.create_shape(), tf_wp_xs)
+    return TFCoil(builder.build())
 
-        Returns
-        -------
-        :
-            The TF coil shapes
-        """
-        tf_cl, tf_wp_xs = TFCoilDesigner(
-            params, build_config, coilset, plasma_lcfs
-        ).execute()
-        builder = TFCoilBuilder(params, build_config, tf_cl.create_shape(), tf_wp_xs)
-        return TFCoil(builder.build())
 
-    @staticmethod
-    def build_bb(
-        params: dict | ParameterFrame,
-        build_config: dict,
-        mat_name: str,
-        ref_fbe: Equilibrium,
-    ):
-        """Build the breeder blanket component."""
-        return BB(BBBuilder(params, build_config, mat_name, ref_fbe).build())
+def build_bb(
+    params: dict | ParameterFrame,
+    build_config: dict,
+    mat_name: str,
+    ref_fbe: Equilibrium,
+):
+    """Build the breeder blanket component."""
+    return BB(BBBuilder(params, build_config, mat_name, ref_fbe).build())
 
-    @staticmethod
-    def build_pf_coils(
-        params: dict | ParameterFrame,
-        build_config: dict,
-        coilset: CoilSet,
-    ) -> PFCoil:
-        """
-        Build the PF coils for the reactor,
-        based on the coilset from the free boundary equilibrium.
 
-        Returns
-        -------
-        :
-            PF coil component manager
-        """
-        component = build_pf_coils_component(params, build_config, coilset)
-        return PFCoil(component, coilset)
+def build_pf_coils(
+    params: dict | ParameterFrame,
+    build_config: dict,
+    coilset: CoilSet,
+) -> PFCoil:
+    """
+    Build the PF coils for the reactor,
+    based on the coilset from the free boundary equilibrium.
 
-    @staticmethod
-    def build_is(
-        params: dict | ParameterFrame,
-        build_config: dict,
-        mat_name: str,
-        ref_fbe: Equilibrium,
-    ):
-        """Build the inboard shield component."""
-        return IS(ISBuilder(params, build_config, mat_name, ref_fbe).build())
+    Returns
+    -------
+    :
+        PF coil component manager
+    """
+    component = build_pf_coils_component(params, build_config, coilset)
+    return PFCoil(component, coilset)
+
+
+def build_is(
+    params: dict | ParameterFrame,
+    build_config: dict,
+    mat_name: str,
+    ref_fbe: Equilibrium,
+):
+    """Build the inboard shield component."""
+    return IS(ISBuilder(params, build_config, mat_name, ref_fbe).build())

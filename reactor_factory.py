@@ -51,10 +51,10 @@ from eudemo.tf_coils import TFCoil as EU_TFCoil
 from matproplib.conditions import OperationalConditions
 
 from bluemira_st.blanket.manager import BB
-from bluemira_st.build_routines import SphericalReactor
 from bluemira_st.params import BluemiraSTParams
 from bluemira_st.pf_coil.manager import PFCoil as SPH_PFCoil
 from bluemira_st.radial_build.run_process import radial_build as st_radial_build
+from bluemira_st.spherical_reactor import SphericalReactor
 from bluemira_st.tf_coil.manager import TFCoil as SPH_TFCoil
 
 
@@ -688,13 +688,14 @@ class ReactorFactory:
 
 
 if __name__ == "__main__":
-    """ BUILD_CONFIG_FILE_PATH = Path(
+    BUILD_CONFIG_FILE_PATH = Path(
         Path(__file__).parent, "studies/first/config/config.json"
     ).resolve()
     """
     BUILD_CONFIG_FILE_PATH = Path(
         Path(__file__).parent.parent, "bluemira/eudemo/config/build_config.json"
     ).resolve()
+    """
     rf = ReactorFactory.from_config_file(BUILD_CONFIG_FILE_PATH)
 
     reactor = rf.create_reactor()

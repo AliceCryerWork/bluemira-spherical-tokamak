@@ -56,8 +56,8 @@ def main(build_config: str | Path | dict) -> MyReactor:
     )
 
     ref_fbe = build_reference_equilibrium(
-        reactor_config.params_for("reference_fbe").global_params,
-        reactor_config.config_for("reference_fbe"),
+        reactor_config.params_for("free_boundary_equilibrium").global_params,
+        reactor_config.config_for("free_boundary_equilibrium"),
     )
 
     # Fine (it'll just digest whatever it gets from the reference equilibrium)
