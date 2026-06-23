@@ -1,27 +1,27 @@
 {
   "x1": {
-    "value": 0.8728628681165481,
+    "value": 0.8721972699720508,
     "lower_bound": 0.3,
     "upper_bound": 0.5,
     "fixed": true,
     "description": "Inner limb radius"
   },
   "x2": {
-    "value": 10.690185755210413,
-    "lower_bound": 9.738241394940257,
-    "upper_bound": 14.607362092410385,
+    "value": 11.199631387649356,
+    "lower_bound": 9.738532867989226,
+    "upper_bound": 14.607799301983839,
     "fixed": false,
     "description": "Outer limb radius"
   },
   "z1": {
-    "value": 11.724104761645304,
+    "value": 11.724396234694415,
     "lower_bound": 8,
     "upper_bound": 10.5,
     "fixed": true,
     "description": "Upper limb height"
   },
   "z2": {
-    "value": -11.724104761645304,
+    "value": -11.724396234694415,
     "lower_bound": -10.5,
     "upper_bound": -8,
     "fixed": true,

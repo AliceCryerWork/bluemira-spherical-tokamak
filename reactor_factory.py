@@ -56,6 +56,12 @@ from bluemira_st.pf_coil.manager import PFCoil as SPH_PFCoil
 from bluemira_st.radial_build.run_process import radial_build as st_radial_build
 from bluemira_st.spherical_reactor import SphericalReactor
 from bluemira_st.tf_coil.manager import TFCoil as SPH_TFCoil
+from geometry_overlap_detection import (
+    GeometryExtractor,
+    KDTreeOverlapDetector,
+    SpatialGridOverlapDetector,
+    fprint_overlaps,
+)
 
 
 class FactoryConfig:
@@ -435,9 +441,13 @@ class ReactorFactory:
 
         reactor.plasma = ReactorFactory._build_plasma(reactor_config, reference_eq)
         ReactorFactory._check_param_exists(reactor_config, "ch")
-        reactor.pf_coils = ReactorFactory._build_pf_coils(reactor, reactor_config)
-        reactor.tf_coils = ReactorFactory._build_tf_coils(reactor, reactor_config)
-        reactor.blanket = ReactorFactory._build_blankets(reactor_config)
+        reactor.pf_coils = ReactorFactory._build_pf_coils(
+            reactor, reactor_config, reference_eq
+        )
+        reactor.tf_coils = ReactorFactory._build_tf_coils(
+            reactor, reactor_config, reference_eq
+        )
+        reactor.blanket = ReactorFactory._build_blankets(reactor_config, reference_eq)
 
         reactor.inboard_shield = SphericalReactor.build_is(
             reactor_config.params_for("inboard_shield"),
@@ -679,16 +689,17 @@ class ReactorFactory:
         particles = n_config.get("particles", n_config["DAGMC"]["particles"])
         neutrons = f"{particles:.2g}".replace(".", "_").replace("+", "")
         a_string = f"{reactor_config.global_params.A.value:.3f}".replace(".", "_")
-        folder_name = f"results_v05/A_{a_string}_neut_{neutrons}"
+        base_dir = Path(__file__).parent
+        folder_name = f"{base_dir}/results_v05/A_{a_string}_neut_{neutrons}"
         Path(folder_name).mkdir(exist_ok=True, parents=True)
         filename = f"{folder_name}/run_time.json"
         with Path(filename).open("w", encoding="utf-8") as f:
             json.dump(run_time_track, f, indent=2)
         reactor.save_reactor(reactor_config, folder_name=folder_name)
+        return reactor
 
 
 if __name__ == "__main__":
-    """
     BUILD_CONFIG_FILE_PATH = Path(
         Path(__file__).parent, "studies/first/config/config.json"
     ).resolve()
@@ -696,7 +707,13 @@ if __name__ == "__main__":
     BUILD_CONFIG_FILE_PATH = Path(
         Path(__file__).parent.parent, "bluemira/eudemo/config/build_config.json"
     ).resolve()
-
+    """
     rf = ReactorFactory.from_config_file(BUILD_CONFIG_FILE_PATH)
 
     reactor = rf.create_reactor()
+    reactor.show_cad("xyz", backend="POLYSCOPE")
+    geometry = GeometryExtractor.extract(reactor)
+    kdtree = KDTreeOverlapDetector.detect(geometry, tolerance=1e-3)
+    spatial_grid = SpatialGridOverlapDetector.detect(geometry, tolerance=1e-3)
+    fprint_overlaps(kdtree)
+    fprint_overlaps(spatial_grid)

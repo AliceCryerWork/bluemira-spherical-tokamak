@@ -26,8 +26,8 @@ class SphericalReactor(Reactor):
     # Components
     plasma: Plasma
     blanket: BB
-    tf_coil: TFCoil
-    pf_coil: PFCoil
+    tf_coils: TFCoil
+    pf_coils: PFCoil
     inboard_shield: IS
 
     # Models
