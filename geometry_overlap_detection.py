@@ -195,7 +195,7 @@ class KDTreeOverlapDetector(BaseOverlapDetector):
             nbrs = tree.query_ball_point(centres[i], half[i] + gmax)
             for j in nbrs:
                 if i < j:
-                    cand.extend((i, j))
+                    cand.append((i, j))  # noqa: PERF401
 
         if not cand:
             return []

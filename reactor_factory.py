@@ -700,6 +700,7 @@ class ReactorFactory:
 
 
 if __name__ == "__main__":
+    """
     BUILD_CONFIG_FILE_PATH = Path(
         Path(__file__).parent, "studies/first/config/config.json"
     ).resolve()
@@ -707,7 +708,7 @@ if __name__ == "__main__":
     BUILD_CONFIG_FILE_PATH = Path(
         Path(__file__).parent.parent, "bluemira/eudemo/config/build_config.json"
     ).resolve()
-    """
+
     rf = ReactorFactory.from_config_file(BUILD_CONFIG_FILE_PATH)
 
     reactor = rf.create_reactor()
