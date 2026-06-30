@@ -13,6 +13,10 @@ from bluemira.base.components import Component, PhysicalComponent
 from bluemira.base.reactor import Reactor
 from bluemira.geometry.base import BoundingBox
 from numpy.typing import NDArray
+from OCC.Core.STEPCAFControl import STEPCAFControl_Reader
+from OCC.Core.TDF import TDF_LabelSequence
+from OCC.Core.TDocStd import TDocStd_Document
+from OCC.Core.XCAFDoc import XCAFDoc_DocumentTool
 from scipy.spatial import KDTree
 
 if TYPE_CHECKING:
@@ -282,3 +286,67 @@ def fprint_overlaps(overlaps: Iterable[NamedCollisionPair]) -> None:
     print(f"Total overlaps = {sum(counter.values())}")  # noqa: T201
     for (a, b), c in counter.items():
         print(f"{a}, {b}: {c}")  # noqa: T201
+
+
+def load_step(filepath: str) -> GeometryData:
+    doc = TDocStd_Document("XmlXCAF")
+    reader = STEPCAFControl_Reader()
+    reader.ReadFile(filepath)
+    reader.Transfer(doc)
+
+    shape_tool = XCAFDoc_DocumentTool.ShapeTool(doc.Main())
+
+    labels = TDF_LabelSequence()
+    shape_tool.GetFreeShapes(labels)
+
+    names = []
+    boxes = []
+    shapes = []
+    for i in range(1, labels.Length() + 1):
+        label = labels.Value(i)
+
+        try:
+            shape = shape_tool.GetShape(label)
+            part_shape = PartShape(shape)
+            bbox = BoundingBox.from_shape(shape)
+
+            names.append(label.GetLabelName())
+            shapes.append(part_shape)
+            boxes.append(bbox)
+        except Exception as e:
+            raise RuntimeError("Failed on label") from e
+
+    return GeometryData(
+        names=names,
+        boxes=boxes,
+        shapes=shapes,
+    )
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Process a file with a specified tolerance."
+    )
+
+    parser.add_argument("filepath", type=str, help="Path to the input file")
+
+    parser.add_argument(
+        "--tolerance",
+        "-t",
+        type=float,
+        default=1e-3,
+        help="Tolerance value (default: %(default)s)",
+    )
+
+    args = parser.parse_args()
+
+    filepath = args.filepath
+    tolerance = args.tolerance
+
+    geometry = load_step(filepath)
+    kdtree = KDTreeOverlapDetector.detect(geometry, tolerance)
+    spatial_grid = SpatialGridOverlapDetector.detect(geometry, tolerance)
+    fprint_overlaps(kdtree)
+    fprint_overlaps(spatial_grid)
