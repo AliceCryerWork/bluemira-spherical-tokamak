@@ -13,10 +13,17 @@ from bluemira.base.components import Component, PhysicalComponent
 from bluemira.base.reactor import Reactor
 from bluemira.geometry.base import BoundingBox
 from numpy.typing import NDArray
+from OCC.Core.Bnd import Bnd_Box
+from OCC.Core.BRepAlgoAPI import BRepAlgoAPI_Common
+from OCC.Core.BRepBndLib import brepbndlib
+from OCC.Core.BRepGProp import brepgprop_VolumeProperties
+from OCC.Core.GProp import GProp_GProps
 from OCC.Core.STEPCAFControl import STEPCAFControl_Reader
-from OCC.Core.TDF import TDF_LabelSequence
+from OCC.Core.TCollection import TCollection_AsciiString
+from OCC.Core.TDF import TDF_Label, TDF_LabelSequence, TDF_Tool
 from OCC.Core.TDocStd import TDocStd_Document
-from OCC.Core.XCAFDoc import XCAFDoc_DocumentTool
+from OCC.Core.TopoDS import TopoDS_Shape
+from OCC.Core.XCAFDoc import XCAFDoc_DocumentTool, XCAFDoc_ShapeTool
 from scipy.spatial import KDTree
 
 if TYPE_CHECKING:
@@ -288,6 +295,19 @@ def fprint_overlaps(overlaps: Iterable[NamedCollisionPair]) -> None:
         print(f"{a}, {b}: {c}")  # noqa: T201
 
 
+def bounding_box_from_shape(shape) -> BoundingBox:
+    bbox = Bnd_Box()
+    brepbndlib.Add(shape, bbox)
+
+    x_min, y_min, z_min, x_max, y_max, z_max = bbox.Get()
+
+    return BoundingBox.from_xyz(
+        np.array([x_min, x_max], dtype=float),
+        np.array([y_min, y_max], dtype=float),
+        np.array([z_min, z_max], dtype=float),
+    )
+
+
 def load_step(filepath: str) -> GeometryData:
     doc = TDocStd_Document("XmlXCAF")
     reader = STEPCAFControl_Reader()
@@ -296,31 +316,102 @@ def load_step(filepath: str) -> GeometryData:
 
     shape_tool = XCAFDoc_DocumentTool.ShapeTool(doc.Main())
 
-    labels = TDF_LabelSequence()
-    shape_tool.GetFreeShapes(labels)
+    return extract_geometry_data(shape_tool)
 
+
+def get_label_name(label):
+    entry = TCollection_AsciiString()
+    TDF_Tool.Entry(label, entry)
+    return entry.ToCString()
+
+
+def actual_label(label, shape_tool):
+    if shape_tool.IsReference(label):
+        ref = TDF_Label()
+        shape_tool.GetReferredShape(label, ref)
+        return ref
+    return label
+
+
+def traverse(
+    label: TDF_Label, shape_tool: XCAFDoc_ShapeTool, names, boxes, shapes
+) -> GeometryData:
+    label = actual_label(label, shape_tool)
+
+    occ_shape = shape_tool.GetShape(label)
+    shape = PartShapeAdapter(occ_shape)
+    shapes.append(shape)
+    names.append(get_label_name(label))
+    boxes.append(bounding_box_from_shape(shape.Shape))
+
+    if shape_tool.IsAssembly(label):
+        children = TDF_LabelSequence()
+        shape_tool.GetComponents(label, children)
+
+        for i in range(1, children.Length() + 1):
+            traverse(
+                children.Value(i),
+                shape_tool,
+                names,
+                boxes,
+                shapes,
+            )
+
+
+def extract_geometry_data(shape_tool: XCAFDoc_ShapeTool) -> GeometryData:
     names = []
     boxes = []
     shapes = []
-    for i in range(1, labels.Length() + 1):
-        label = labels.Value(i)
 
-        try:
-            shape = shape_tool.GetShape(label)
-            part_shape = PartShape(shape)
-            bbox = BoundingBox.from_shape(shape)
+    roots = TDF_LabelSequence()
+    shape_tool.GetFreeShapes(roots)
 
-            names.append(label.GetLabelName())
-            shapes.append(part_shape)
-            boxes.append(bbox)
-        except Exception as e:
-            raise RuntimeError("Failed on label") from e
+    for i in range(1, roots.Length() + 1):
+        traverse(
+            roots.Value(i),
+            shape_tool,
+            names,
+            boxes,
+            shapes,
+        )
 
     return GeometryData(
         names=names,
         boxes=boxes,
         shapes=shapes,
     )
+
+
+class PartShapeAdapter:
+    """Class to adapt TopoDS_Compound to FreeCAD Part.Shape."""
+
+    def __init__(self, shape: TopoDS_Shape):
+        self.Shape = shape
+
+    def common(self, other: "PartShapeAdapter") -> "PartShapeAdapter":
+        op = BRepAlgoAPI_Common(self.Shape, other.Shape)
+        op.Build()
+
+        if not op.IsDone():
+            return PartShapeAdapter(TopoDS_Shape())
+
+        return PartShapeAdapter(op.Shape())
+
+    def isNull(self) -> bool:  # noqa: N802
+        return self.Shape.IsNull()
+
+    @property
+    def Volume(self) -> float:  # noqa: N802
+        if self.Shape.IsNull():
+            return 0.0
+
+        props = GProp_GProps()
+
+        try:
+            brepgprop_VolumeProperties(self.Shape, props)
+            return props.Mass()
+        except RuntimeError:
+            return 0.0
 
 
 if __name__ == "__main__":
